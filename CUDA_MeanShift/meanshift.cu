@@ -15,12 +15,13 @@
 
 #define MYASSERT(condition, ERROR) if (!(condition)) { printf("ERROR: %s \n", ERROR); return; }
 #define rev_sqrt_two_pi 0.3989422804
+#define rev_two_pi rev_sqrt_two_pi*rev_sqrt_two_pi
 
 __device__ __host__ float gaussian_kernel(float dist2, float bandwidth) {
 	const float rev_bandwidth = 1. / bandwidth;
 	const float d2_frac_b2 = dist2 * rev_bandwidth * rev_bandwidth;
-	float div = 1. / rev_sqrt_two_pi * rev_bandwidth;
-	float exp_ = div * expf(-0.5 * d2_frac_b2);
+	float div = 1. / rev_two_pi * rev_bandwidth;
+	float exp_ = div * expf(- 0.5 * d2_frac_b2);
 	return exp_;
 }
 
@@ -28,18 +29,13 @@ __global__ void cuda_MeanShift_SharedMemory_2D(float *X, const float *I, const i
 
 	__shared__ float tile[TILE_WIDTH][2];
 
-	// for every pixel
+	// for each pixel
 	int tx = threadIdx.x;
 	int row = blockIdx.x*blockDim.x + tx;
 
 	float2 numerator = make_float2(0.0, 0.0);
 	float denominator = 0.0;
-
 	int it = row * dim;
-	float2 pixel;
-	if (row < N) {
-		pixel = make_float2(I[it], I[it + 1]); //load output pixel
-	}
 
 	for (int tile_i = 0; tile_i < (N - 1) / TILE_WIDTH + 1; ++tile_i) {
 		//loading phase - each thread load something into shared memory
@@ -59,13 +55,15 @@ __global__ void cuda_MeanShift_SharedMemory_2D(float *X, const float *I, const i
 
 		if (row < N) // only the threads inside the bounds do some computation
 		{
+			float2 x_i = make_float2(I[it], I[it + 1]); //load input point
+
 			//computing phase
-			for (int i = 0; i < TILE_WIDTH; ++i) {
-				float2 n_pixel = make_float2(tile[i][0], tile[i][1]); //from shared memory
-				float2 sub = pixel - n_pixel;
+			for (int j = 0; j < TILE_WIDTH; ++j) {
+				float2 x_j = make_float2(tile[j][0], tile[j][1]); //from shared memory
+				float2 sub = x_i - x_j;
 				float distance2 = dot(sub, sub);
 				float weight = gaussian_kernel(distance2, BW);
-				numerator += n_pixel * weight; //accumulating
+				numerator += x_j * weight; //accumulating
 				denominator += weight;
 
 			}
@@ -85,8 +83,44 @@ __global__ void cuda_MeanShift_SharedMemory_2D(float *X, const float *I, const i
 
 extern "C"
 void cudaMeanShift_sharedMemory_2D_wrapper(float *X, const float *I, const int N, const int vecDim, dim3 gridDim, dim3 blockDim) {
-	//kernel configuration and launch
 	cuda_MeanShift_SharedMemory_2D <<<gridDim, blockDim >>> (X, I, N, vecDim);
+}
+
+__global__ void cuda_MeanShift_2D(float *X, const float *I, const int N, const int dim) {
+
+	// for every pixel
+	int tx = threadIdx.x;
+	int row = blockIdx.x*blockDim.x + tx;
+
+	float2 numerator = make_float2(0.0, 0.0);
+	float denominator = 0.0;
+
+	int it = row * dim;
+	float2 x_i;
+	if (row < N) {
+		x_i = make_float2(I[it], I[it + 1]); //load input point
+
+			//computing mean shift
+			for (int j = 0; j < N; ++j) {
+				float2 x_j = make_float2(I[j*dim], I[j*dim + 1]); //from central gpu memory
+				float2 sub = x_i - x_j;
+				float distance2 = dot(sub, sub);
+				float weight = gaussian_kernel(distance2, BW);
+				numerator += x_j * weight; //accumulating
+				denominator += weight;
+			}
+
+		//storing
+		numerator /= denominator;
+		X[it] = numerator.x;
+		X[it + 1] = numerator.y;
+	}
+
+}
+
+extern "C"
+void cudaMeanShift_2D_wrapper(float *X, const float *I, const int N, const int vecDim, dim3 gridDim, dim3 blockDim) {
+	cuda_MeanShift_2D <<<gridDim, blockDim >>> (X, I, N, vecDim);
 }
 
 #endif // !MEANSHIFT_CU
