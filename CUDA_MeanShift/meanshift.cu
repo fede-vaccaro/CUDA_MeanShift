@@ -25,7 +25,7 @@ __device__ __host__ float gaussian_kernel(float dist2, float bandwidth) {
 	return exp_;
 }
 
-__global__ void cuda_MeanShift_SharedMemory_2D(float *X, const float *I, const int N, const int dim) {
+__global__ void cuda_MeanShift_SharedMemory_2D(float *X, const float *I, const float * originalPoints, const int N, const int dim) {
 
 	__shared__ float tile[TILE_WIDTH][2];
 
@@ -43,8 +43,8 @@ __global__ void cuda_MeanShift_SharedMemory_2D(float *X, const float *I, const i
 
 		int index = row_t * dim;
 		if (row_t < N) {
-			tile[tx][0] = I[index];
-			tile[tx][1] = I[index + 1];
+			tile[tx][0] = originalPoints[index];
+			tile[tx][1] = originalPoints[index + 1];
 		}
 		else {
 			tile[tx][0] = 0.0;
@@ -82,11 +82,11 @@ __global__ void cuda_MeanShift_SharedMemory_2D(float *X, const float *I, const i
 }
 
 extern "C"
-void cudaMeanShift_sharedMemory_2D_wrapper(float *X, const float *I, const int N, const int vecDim, dim3 gridDim, dim3 blockDim) {
-	cuda_MeanShift_SharedMemory_2D <<<gridDim, blockDim >>> (X, I, N, vecDim);
+void cudaMeanShift_sharedMemory_2D_wrapper(float *X, const float *I, const float * originalPoints, const int N, const int vecDim, dim3 gridDim, dim3 blockDim) {
+	cuda_MeanShift_SharedMemory_2D <<<gridDim, blockDim >>> (X, I, originalPoints, N, vecDim);
 }
 
-__global__ void cuda_MeanShift_2D(float *X, const float *I, const int N, const int dim) {
+__global__ void cuda_MeanShift_2D(float *X, const float *I, const float * originalPoints, const int N, const int dim) {
 
 	// for every pixel
 	int tx = threadIdx.x;
@@ -96,14 +96,14 @@ __global__ void cuda_MeanShift_2D(float *X, const float *I, const int N, const i
 	float denominator = 0.0;
 
 	int it = row * dim;
-	float2 x_i;
+	float2 y_i;
 	if (row < N) {
-		x_i = make_float2(I[it], I[it + 1]); //load input point
+		y_i = make_float2(I[it], I[it + 1]); //load input point
 
 			//computing mean shift
 			for (int j = 0; j < N; ++j) {
-				float2 x_j = make_float2(I[j*dim], I[j*dim + 1]); //from central gpu memory
-				float2 sub = x_i - x_j;
+				float2 x_j = make_float2(originalPoints[j*dim], originalPoints[j*dim + 1]); //from central gpu memory
+				float2 sub = y_i - x_j;
 				float distance2 = dot(sub, sub);
 				float weight = gaussian_kernel(distance2, BW);
 				numerator += x_j * weight; //accumulating
@@ -119,8 +119,8 @@ __global__ void cuda_MeanShift_2D(float *X, const float *I, const int N, const i
 }
 
 extern "C"
-void cudaMeanShift_2D_wrapper(float *X, const float *I, const int N, const int vecDim, dim3 gridDim, dim3 blockDim) {
-	cuda_MeanShift_2D <<<gridDim, blockDim >>> (X, I, N, vecDim);
+void cudaMeanShift_2D_wrapper(float *X, const float *I, const float * originalPoints, const int N, const int vecDim, dim3 gridDim, dim3 blockDim) {
+	cuda_MeanShift_2D <<<gridDim, blockDim >>> (X, I, originalPoints, N, vecDim);
 }
 
 #endif // !MEANSHIFT_CU

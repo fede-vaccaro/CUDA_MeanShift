@@ -23,9 +23,9 @@
 #include "commonDefines.h"
 
 extern "C"
-void cudaMeanShift_sharedMemory_2D_wrapper(float *X, const float *I, const int N, const int vecDim, dim3 gridDim, dim3 blockDim);
+void cudaMeanShift_sharedMemory_2D_wrapper(float *X, const float *I, const float * originalPoints, const int N, const int vecDim, dim3 gridDim, dim3 blockDim);
 extern "C"
-void cudaMeanShift_2D_wrapper(float *X, const float *I, const int N, const int vecDim, dim3 gridDim, dim3 blockDim);
+void cudaMeanShift_2D_wrapper(float *X, const float *I, const float * originalPoints, const int N, const int vecDim, dim3 gridDim, dim3 blockDim);
 
 int main() {
 
@@ -45,10 +45,12 @@ int main() {
 
 	thrust::device_vector<float> inputData_device = inputData;
 	thrust::device_vector<float> outputData_device = inputData;
-
+	thrust::device_vector<float> originalPoints_device = inputData;
 
 	float * inputData_ptr_device = thrust::raw_pointer_cast(&inputData_device[0]);
 	float * outputData_ptr_device = thrust::raw_pointer_cast(&outputData_device[0]);
+	float * originalPoints_ptr_device = thrust::raw_pointer_cast(&originalPoints_device[0]);
+
 
 	dim3 gridDim = dim3(ceil((float)(datasetDim) / BLOCK_DIM));
 	dim3 blockDim = dim3(BLOCK_DIM);
@@ -56,8 +58,8 @@ int main() {
 	double t1 = omp_get_wtime();
 	for (int i = 0; i < MAX_ITERATIONS; i++) {
 		//std::cout << "Iteration n: " << i << " started." << std::endl;
-		//cudaMeanShift_sharedMemory_2D_wrapper(outputData_ptr_device, inputData_ptr_device, datasetDim, vecDim, gridDim, blockDim);
-		cudaMeanShift_2D_wrapper(outputData_ptr_device, inputData_ptr_device, datasetDim, vecDim, gridDim, blockDim);
+		cudaMeanShift_sharedMemory_2D_wrapper(outputData_ptr_device, inputData_ptr_device, originalPoints_ptr_device, datasetDim, vecDim, gridDim, blockDim);
+		//cudaMeanShift_2D_wrapper(outputData_ptr_device, inputData_ptr_device, originalPoints_ptr_device, datasetDim, vecDim, gridDim, blockDim);
 		cudaDeviceSynchronize();
 		std::swap(inputData_ptr_device, outputData_ptr_device);
 	}
