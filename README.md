@@ -16,4 +16,6 @@ MeanShift is a simple clustering algorithm. It is *embarassingly parallel*, so a
 
 This version is optimized to avoid lots of vram access thanks to the shared memory.
 
+Read the included .pdf for further information.
+
 
